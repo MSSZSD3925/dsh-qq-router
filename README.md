@@ -2,20 +2,6 @@
 
 用 QQ 远程驾驶 **本 profile 里已经存在的会话**。
 
-## 装之前先改配置
-
-`cordis.patch.yml` 里的值是示例，装上后必须换成你自己的，否则插件收不到消息或者起不来：
-
-| 键 | 示例 | 怎么改 |
-| --- | --- | --- |
-| `allow_users` | `[123456789]` | 换成你自己的 QQ 号。不在列表里的消息一律忽略，这是唯一的安全边界 |
-| `ws_url` | `ws://127.0.0.1:3001` | OneBot 正向 WS 地址，与 NapCat 的配置一致 |
-| `napcat_path` | `D:\Program Files\NapCatQQ Desktop\NapCatQQ-Desktop.exe` | NapCat 桌面端可执行文件，`#start` 在它没起来时用它拉起 |
-| `dsh_exe` / `dsh_port` | `D:\DSH\DeepSeek Harness.exe` / `19387` | DSH 桌面端路径与 Web 端口，唤醒器与登录自启用它判断并启动 DSH |
-| `prefix` | `#` | 命令前缀，按喜好改 |
-
-改完重启 DSH 生效。要装"DSH 关着也能用 QQ 唤起来"的那一半，跑一次 `qq_waker install`。
-
 和 `dsh-1bot` 的区别（这是本插件存在的理由）：
 
 | | dsh-1bot | dsh-qq-router |
@@ -40,10 +26,22 @@
 #msg [路由]        该会话最新的一条助手回复
 #last [路由]       该会话里你自己发的最后一条消息
 #status            连接状态与当前路由、待回话轮次
+#link              取一个新的手机配对链接（600 秒有效）
 #help              用法
 ```
 
 `#use` 是 `#set` 的同义写法，保留兼容。
+
+## 手机配对链接
+
+装了 `@linxin666/dsh-remote-web-ui` 时，插件会：
+
+- **连上 QQ 后自动发一条新的配对链接**到白名单（可用 `pair_link_autosend: false` 关掉）
+- 随时发 `#link` / `#配对` 现取一个新的
+
+链接是往远程插件自己的 `POST /api/pair/issue` 要的，返回值默认走它的 `publicBaseUrl`（cloudflare 隧道域名），有效期 600 秒。要指定局域网地址就设 `pair_link_address`。
+
+为什么需要这条：DSH 每次重启后旧链接就失效，而手机上又没法自己刷新二维码 —— 自动推送让"重启后直接点开就能进"成立。
 
 ## 路由怎么写
 
@@ -68,7 +66,7 @@
 `#set` 的默认会话存在 `$DSH_HOME/dsh-qq-router-state.json`：
 
 ```json
-{ "sticky": { "123456789": "session-xxxxxxxx-..." } }
+{ "sticky": { "123456789": "session-4f9fff0d-..." } }
 ```
 
 删掉这个文件即回到"没有默认会话"的状态。它只记默认路由，不碰任何会话日志。
@@ -117,10 +115,28 @@
 | action | 作用 |
 | --- | --- |
 | `install` | 写 `waker.config.json` 与隐藏启动脚本；注册 `DSH Waker`（登录自启、常驻、无时限）与 `DSH Start`（直接跑 exe、工作目录、允许多实例）；在启动文件夹建 DSH 快捷方式；立即启动唤醒器 |
-| `status` | 两个任务的状态与上次结果、登录自启是否已设、`dsh_port` 是否在听 |
+| `status` | 两个任务的状态与上次结果、登录自启是否已设、当前 DSH 进程数 |
 | `start` / `stop` | 启停唤醒器 |
 | `uninstall` | 删除两个任务、登录自启快捷方式、隐藏启动脚本（保留配置文件） |
 
-唤醒器的行为：连 NapCat 的 3001，只认白名单 QQ 的 `#start` / `#启动` / `#开机`；先探 `dsh_port`，通了就保持沉默交给插件回答（避免双回复），没通才清理陈旧锁、等旧实例退净、经 `DSH Start` 启动并轮询端口。
+唤醒器的行为：连 NapCat 的 3001，只认白名单 QQ 的 `#start` / `#启动` / `#开机`；先看**插件心跳**决定要不要接手 —— 心跳新鲜（90 秒内）说明插件在线，保持沉默交给它回答；心跳不存在或过期才按"DSH 未运行"处理：清理陈旧锁、等旧实例退净、经 `DSH Start` 启动、轮询进程是否稳定存活，最后回执。
 
-日志：`~/.dsh/dsh-waker.log`。
+判定"启动成功"用的是**进程树稳定存活**而不是端口：新版桌面端 webserver 用随机端口（`port: 0`），写死端口会永远判失败。
+
+日志：`~/.dsh/dsh-waker.log`，心跳：`~/.dsh/qq-router-heartbeat`。
+
+## 各功能依赖哪些插件
+
+这个插件有三块能力各自依赖外部组件，缺了只影响对应那一块，不影响其余部分：
+
+| 功能 | 依赖 | 缺失时的表现 |
+| --- | --- | --- |
+| `#link` / `#配对` / `#pin`：取手机配对链接 | **`@linxin666/dsh-remote-web-ui`**（调它的 `POST /api/pair/issue`） | 回"拿不到配对链接：配对接口返回 404"；其余命令照常 |
+| 连上 QQ 后自动推送配对链接 | 同上（配置 `pair_link_autosend` 控制开关） | 只少一条自动消息 |
+| `#start` 远程拉起 DSH | **NapCat + OneBot 正向 WS**（默认 `ws://127.0.0.1:3001`）+ 计划任务 `DSH Start`（由 `qq_waker install` 创建） | 回"拉起失败，检查计划任务或路径" |
+| NapCat 掉线自动重连 | 本插件看门狗（45 秒探活）+ `napcat_path` | 日志里记重试失败原因 |
+
+实现细节：配对链接不是去读界面上的二维码，而是直接调远程插件的接口 —— 那个接口只接受来自 loopback 的 POST，而本插件与它在同一个宿主进程里，所以本机调用即可。链接默认走远程插件的 `publicBaseUrl`（cloudflare 隧道域名），有效期 600 秒；改 `pair_link_address` 可指定局域网地址。
+
+`dsh_port` 这个配置项已停用：桌面端 webserver 改成随机端口后，固定端口不再能作为存活判据，保留此键只为兼容旧配置。
+

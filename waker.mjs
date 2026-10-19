@@ -55,6 +55,23 @@ const log = (m) => {
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /** 当前 DeepSeek Harness 进程数；-1 表示查询失败。区分"进程没起"与"起了但端口没通"。 */
+const HEARTBEAT = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'qq-router-heartbeat')
+
+/**
+ * 插件心跳距今多少毫秒；没有心跳返回 null。
+ * 为什么不用进程数判断"DSH 在不在"：关闭 DSH 后残留进程仍然存在，进程数 > 0，
+ * 唤醒器会以为插件会回答而保持沉默，实际没人回答，命令就石沉大海。
+ */
+function pluginHeartbeatAgeMs() {
+  try {
+    const ts = Number(readFileSync(HEARTBEAT, 'utf8').trim())
+    if (!Number.isFinite(ts) || ts <= 0) return null
+    return Date.now() - ts
+  } catch {
+    return null
+  }
+}
+
 function dshProcessCount() {
   return new Promise((resolve) => {
     execFile(
@@ -164,10 +181,14 @@ async function onMessage(bot, ev) {
     if (!['start', '启动', '开机'].includes(head)) return
 
     // DSH 在跑：让插件回答，唤醒器保持沉默，避免双回复
-    if (await portOpen(CFG.port)) {
-      log('[waker] 收到 start，但 DSH 已在跑，交给插件回答')
+    const beatAge = pluginHeartbeatAgeMs()
+    if (beatAge !== null && beatAge <= 90000) {
+      log(`[waker] 插件心跳 ${Math.round(beatAge / 1000)} 秒前，交给插件回答`)
       return
     }
+    log(
+      `[waker] 插件心跳${beatAge === null ? '不存在' : `已过期 ${Math.round(beatAge / 1000)} 秒`}，按"DSH 未运行"处理`,
+    )
 
     log(`[waker] ${qq} 要求启动 DSH`)
     await send(bot, qq, `DSH 没在跑，正在启动，最多等 ${CFG.waitSecs} 秒`)
@@ -204,17 +225,25 @@ async function onMessage(bot, ev) {
       }
       log(`[waker] 第 ${attempt} 轮已发出启动请求`)
       let aliveSeen = false
+      let stableChecks = 0
       const roundEnd = Math.min(Date.now() + 40000, deadline)
       while (Date.now() < roundEnd) {
         await delay(3000)
         waited += 3
-        if (await portOpen(CFG.port, 1500)) {
-          log(`[waker] 端口已通（${waited}s，第 ${attempt} 轮）`)
-          await send(bot, qq, `DSH 起来了，${CFG.port} 端口已通（等了 ${waited} 秒）`)
-          return
-        }
         const c = await dshProcessCount()
-        if (c > 0) aliveSeen = true
+        if (c > 0) {
+          aliveSeen = true
+          stableChecks += 1
+          // 进程树稳定存活 9 秒即认为起来了。
+          // 不再等固定端口：桌面端 webserver 用随机端口，端口号每次启动都变。
+          if (stableChecks >= 3) {
+            log(`[waker] 进程稳定（${c} 个，${waited}s，第 ${attempt} 轮）`)
+            await send(bot, qq, `DSH 起来了（${c} 个进程，等了 ${waited} 秒）`)
+            return
+          }
+        } else {
+          stableChecks = 0
+        }
         if (aliveSeen && c === 0) {
           log(`[waker] 第 ${attempt} 轮：进程起了又退，准备重试`)
           break
@@ -227,7 +256,7 @@ async function onMessage(bot, ev) {
       bot,
       qq,
       finalCount > 0
-        ? `等了 ${CFG.waitSecs} 秒：进程起来了 ${finalCount} 个，但 ${CFG.port} 没通 —— 卡在启动流程里了`
+        ? `等了 ${CFG.waitSecs} 秒：进程起来了 ${finalCount} 个，但一直不稳定（可能在反复重启）`
         : `等了 ${CFG.waitSecs} 秒：一个进程都没起来 —— 启动动作没生效`,
     )
   } catch (err) {
@@ -259,9 +288,9 @@ async function main() {
   if (!singleton) process.exit(0)
   // 一次性模式：登录自启用。只在 19387 没通时才启动，避免同一个 profile 起两个实例。
   if (process.argv.includes('--launch-if-down')) {
-    const up = await portOpen(CFG.port)
-    log(`[waker] launch-if-down：${CFG.port} ${up ? '已通，跳过' : '没通，启动 DSH'}`)
-    if (!up) {
+    const running = (await dshProcessCount()) > 0
+    log(`[waker] launch-if-down：${running ? '已有进程，跳过' : '没有进程，启动 DSH'}`)
+    if (!running) {
       // 必须经计划任务启动：本进程跑在 run-hidden.py 的 Job 里，
       // 直接 spawn 的子进程会随本进程退出被 kill-on-close 杀掉。
       const ok = await launchViaTask(CFG.task)
@@ -273,7 +302,7 @@ async function main() {
     return
   }
   const probeOnly = process.argv.includes('--probe')
-  log(`[waker] 启动 probeOnly=${probeOnly}，端口探测 ${CFG.port} = ${await portOpen(CFG.port)}`)
+  log(`[waker] 启动 probeOnly=${probeOnly}，当前 DSH 进程数 ${await dshProcessCount()}`)
   let bot
   try {
     bot = await connect({

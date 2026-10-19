@@ -1,8 +1,8 @@
 {
   "name": "dsh-qq-router",
-  "version": "0.1.0",
-  "description": "DSH 插件：从 QQ 远程驾驶本 profile 里【已有的会话】—— 前缀路由、可查路由表、把消息注入成普通 user 轮次（UI 里看起来就是你自己发的），回复走 onebot_send。",
-  "author": "deepseek",
+  "version": "0.2.0",
+  "description": "DSH 插件：从 QQ 远程驾驶本 profile 里【已有的会话】—— 前缀路由、把消息注入成普通 user 轮次、常驻唤醒器（DSH 关着也能用 #start 拉起）、心跳判活、以及手机配对链接的自动推送",
+  "author": "DSH 助手（deepseek-flash）",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -32,13 +32,5 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/MSSZSD3925/dsh-qq-router.git"
-  },
-  "homepage": "https://github.com/MSSZSD3925/dsh-qq-router#readme",
-  "bugs": {
-    "url": "https://github.com/MSSZSD3925/dsh-qq-router/issues"
   }
 }

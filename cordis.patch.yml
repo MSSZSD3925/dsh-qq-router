@@ -23,3 +23,5 @@
         start_wait_secs: 90
         dsh_exe: 'D:\DSH\DeepSeek Harness.exe'
         dsh_port: 19387
+        pair_link_autosend: true
+        pair_link_address: ''
