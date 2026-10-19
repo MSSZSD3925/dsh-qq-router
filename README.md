@@ -2,6 +2,20 @@
 
 用 QQ 远程驾驶 **本 profile 里已经存在的会话**。
 
+## 装之前先改配置
+
+`cordis.patch.yml` 里的值是示例，装上后必须换成你自己的，否则插件收不到消息或者起不来：
+
+| 键 | 示例 | 怎么改 |
+| --- | --- | --- |
+| `allow_users` | `[123456789]` | 换成你自己的 QQ 号。不在列表里的消息一律忽略，这是唯一的安全边界 |
+| `ws_url` | `ws://127.0.0.1:3001` | OneBot 正向 WS 地址，与 NapCat 的配置一致 |
+| `napcat_path` | `D:\Program Files\NapCatQQ Desktop\NapCatQQ-Desktop.exe` | NapCat 桌面端可执行文件，`#start` 在它没起来时用它拉起 |
+| `dsh_exe` / `dsh_port` | `D:\DSH\DeepSeek Harness.exe` / `19387` | DSH 桌面端路径与 Web 端口，唤醒器与登录自启用它判断并启动 DSH |
+| `prefix` | `#` | 命令前缀，按喜好改 |
+
+改完重启 DSH 生效。要装"DSH 关着也能用 QQ 唤起来"的那一半，跑一次 `qq_waker install`。
+
 和 `dsh-1bot` 的区别（这是本插件存在的理由）：
 
 | | dsh-1bot | dsh-qq-router |
