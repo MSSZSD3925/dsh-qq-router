@@ -1,0 +1,25 @@
+# dsh-qq-router —— 挂载声明 + 配置
+#
+# ★ 这份 config 的键必须与插件 Config schema 完全一致：多出任何键，严格校验
+#   会让插件加载失败，而失败只写在启动 DSH 的终端里（不落盘），现象是
+#   "装好了但一点反应都没有"。改插件 schema 时记得同步这里。
+- insert:
+    - id: dsh-qq-router
+      name: dsh-qq-router
+      config:
+        enabled: true
+        ws_url: 'ws://127.0.0.1:3001'
+        access_token: ''
+        allow_users: [123456789]
+        prefix: '#'
+        default_session: ''
+        aliases: []
+        list_limit: 12
+        route_ttl_secs: 1800
+        reply_chunk_size: 4000
+        silence_notice: true
+        hint: ''
+        napcat_path: 'D:\Program Files\NapCatQQ Desktop\NapCatQQ-Desktop.exe'
+        start_wait_secs: 90
+        dsh_exe: 'D:\DSH\DeepSeek Harness.exe'
+        dsh_port: 19387
