@@ -182,12 +182,19 @@ async function onMessage(bot, ev) {
 
     // DSH 在跑：让插件回答，唤醒器保持沉默，避免双回复
     const beatAge = pluginHeartbeatAgeMs()
-    if (beatAge !== null && beatAge <= 90000) {
+    const procs = await dshProcessCount()
+
+    // 进程数 0 是最硬的判据：直接从"未运行"走，不等心跳过期。
+    // 强杀 DSH 时 dispose 不会执行，心跳文件会保留到 mtime 过期（最多 90 秒），
+    // 这期间只看心跳会误判成"插件还在"，用户发 #start 就没人应答。
+    if (procs > 0 && beatAge !== null && beatAge <= 90000) {
       log(`[waker] 插件心跳 ${Math.round(beatAge / 1000)} 秒前，交给插件回答`)
       return
     }
     log(
-      `[waker] 插件心跳${beatAge === null ? '不存在' : `已过期 ${Math.round(beatAge / 1000)} 秒`}，按"DSH 未运行"处理`,
+      `[waker] 进程 ${procs} 个，插件心跳${
+        beatAge === null ? '不存在' : `已过期 ${Math.round(beatAge / 1000)} 秒`
+      }，按"DSH 未运行"处理`,
     )
 
     log(`[waker] ${qq} 要求启动 DSH`)
@@ -214,6 +221,17 @@ async function onMessage(bot, ev) {
       }
     }
 
+    // 启动前心跳的值。只有启动后出现**更新**的心跳，才能证明插件真的加载了。
+    // 只看进程数会把"应用窗口起来了、宿主没起来"误判成启动成功：
+    // 那种状态下所有 QQ 命令都没人处理，用户看到的就是"回了启动成功，然后没反应"。
+    const beatAtLaunch = (() => {
+      try {
+        return Number(readFileSync(HEARTBEAT, 'utf8').trim()) || 0
+      } catch {
+        return 0
+      }
+    })()
+
     // 最多三轮：每轮启动后观察 40 秒，若进程起了又秒退（拿不到锁）就再试
     const deadline = Date.now() + CFG.waitSecs * 1000
     let waited = 0
@@ -225,7 +243,6 @@ async function onMessage(bot, ev) {
       }
       log(`[waker] 第 ${attempt} 轮已发出启动请求`)
       let aliveSeen = false
-      let stableChecks = 0
       const roundEnd = Math.min(Date.now() + 40000, deadline)
       while (Date.now() < roundEnd) {
         await delay(3000)
@@ -233,16 +250,22 @@ async function onMessage(bot, ev) {
         const c = await dshProcessCount()
         if (c > 0) {
           aliveSeen = true
-          stableChecks += 1
-          // 进程树稳定存活 9 秒即认为起来了。
-          // 不再等固定端口：桌面端 webserver 用随机端口，端口号每次启动都变。
-          if (stableChecks >= 3) {
-            log(`[waker] 进程稳定（${c} 个，${waited}s，第 ${attempt} 轮）`)
-            await send(bot, qq, `DSH 起来了（${c} 个进程，等了 ${waited} 秒）`)
+          // 就绪的判据是插件写出了新的心跳，而不是"进程还在"。
+          // 桌面端 webserver 用随机端口，端口号每次启动都变，所以也不能拿端口判。
+          const beat = (() => {
+            try {
+              return Number(readFileSync(HEARTBEAT, 'utf8').trim()) || 0
+            } catch {
+              return 0
+            }
+          })()
+          if (beat > beatAtLaunch) {
+            log(`[waker] 插件已加载（${c} 个进程，心跳 ${beat}，${waited}s，第 ${attempt} 轮）`)
+            await send(bot, qq, `DSH 起来了（${c} 个进程，插件已连上，等了 ${waited} 秒）`)
             return
           }
         } else {
-          stableChecks = 0
+          aliveSeen = false
         }
         if (aliveSeen && c === 0) {
           log(`[waker] 第 ${attempt} 轮：进程起了又退，准备重试`)
@@ -251,13 +274,22 @@ async function onMessage(bot, ev) {
       }
     }
     const finalCount = await dshProcessCount()
-    log(`[waker] 超时，进程 ${finalCount} 个，端口未通`)
+    const finalBeat = (() => {
+      try {
+        return Number(readFileSync(HEARTBEAT, 'utf8').trim()) || 0
+      } catch {
+        return 0
+      }
+    })()
+    log(`[waker] 超时，进程 ${finalCount} 个，心跳${finalBeat > beatAtLaunch ? '有更新' : '没更新'}`)
     await send(
       bot,
       qq,
-      finalCount > 0
-        ? `等了 ${CFG.waitSecs} 秒：进程起来了 ${finalCount} 个，但一直不稳定（可能在反复重启）`
-        : `等了 ${CFG.waitSecs} 秒：一个进程都没起来 —— 启动动作没生效`,
+      finalCount === 0
+        ? `等了 ${CFG.waitSecs} 秒：一个进程都没起来 —— 启动动作没生效`
+        : finalBeat > beatAtLaunch
+          ? `等了 ${CFG.waitSecs} 秒：进程 ${finalCount} 个，插件心跳有更新但没连上 QQ，可能 NapCat 没起来`
+          : `等了 ${CFG.waitSecs} 秒：进程 ${finalCount} 个，但插件没加载（心跳没更新）—— 窗口起来了、宿主没起来，去电脑上看一眼`,
     )
   } catch (err) {
     log(`[waker] 处理失败: ${err instanceof Error ? err.message : String(err)}`)
