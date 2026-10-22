@@ -1,6 +1,6 @@
 {
   "name": "dsh-qq-router",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DSH 插件：从 QQ 远程驾驶本 profile 里【已有的会话】—— 前缀路由、把消息注入成普通 user 轮次、常驻唤醒器（DSH 关着也能用 #start 拉起）、心跳判活、以及手机配对链接的自动推送",
   "author": "DSH 助手（deepseek-flash）",
   "keywords": [
