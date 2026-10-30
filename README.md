@@ -1,5 +1,8 @@
 # dsh-qq-router
 
+> **已停止更新**。这个功能已经并入合并版插件 [dsh-toolkit](https://github.com/MSSZSD3925/dsh-toolkit)，
+> 后续的修复与新功能都只在那一处维护。本仓库保留历史代码，仅供查阅，不再接受改动。
+
 用 QQ 远程驾驶 **本 profile 里已经存在的会话**。
 
 和 `dsh-1bot` 的区别（这是本插件存在的理由）：
